@@ -1,0 +1,10 @@
+#!/usr/bin/python
+import sys
+try:
+	f = open('/tmp/sm.asc').read().strip()
+	print f
+except:
+	print "(8) Nada"
+
+if len(sys.argv) > 1:
+	print ' '.join(sys.argv[1:])

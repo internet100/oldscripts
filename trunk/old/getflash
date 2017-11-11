@@ -1,0 +1,31 @@
+#!/usr/bin/python
+#coding: utf8
+import os
+import time
+fn = "./CF_%02i%02i%02i.%02i%02i_%%02i.flv"%(time.localtime()[:5])
+q,vl,h,k,o,l = "/proc","epiphany plugin-container --type=plugin flashplayer.so firefox seamonkey opera midori".split(" "),'cmdline','/Flash','fd/',0
+m = []
+lx = lambda x, y: q+"/"+x+"/"+y
+for i in os.listdir(q):
+	try:
+		int(i)
+		g = file(lx(i, h))
+		d = g.read()
+		g.close()
+		for j in vl:
+			if j in d:
+				dd = lx(i,o)
+				for i in os.listdir(dd):
+					ddd = os.path.realpath(dd+i)
+					if k in ddd:
+						m.append([dd+i, ddd])
+	except: pass
+n = []
+for i in m:
+	if os.stat(i[0]).st_size > 128*1024:
+		n.append(i)
+for i in n:
+	l += 1
+	print "Copiando %i de %i"%(l, len(n))
+	os.system("cp %s %s"%(i[0], fn%l))
+print "OK"

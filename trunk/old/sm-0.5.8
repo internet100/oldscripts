@@ -1,0 +1,613 @@
+#!/usr/bin/python
+# -*- coding: latin1 -*-
+"""
+Este eh um gerenciador de musicas que pode ser executado tanto localmente
+quanto remotamente, possuindo varias opcoes. 
+
+Autor: Breno Neves <internet100wm@gmail.com>
+"""
+
+import re, os, sys, random, bz2, urllib, time, shelve
+from unicodedata import normalize
+try:
+    import psyco
+    psyco.full()
+    psy = True
+except:
+    psy = False
+    pass
+
+# config
+busca     = "111"
+maxres    = 20
+tsep      = " ._-"
+destino = "./player/"
+convd="mplayer -af resample=44100:volnorm=2 -really-quiet %s -ao pcm:file=/dev/stdout"
+convc="lame -S -s 44.1 /dev/stdin -m j --abr 128 -q 4 -o %s --tt %s --ta %s --tl sm1"
+players    = """
+audacious -e %s
+bmp2 -f %
+mplayer -really-quiet %s
+mplayer -really-quiet -af equalizer=-8:7:7:4:1:-4:-8:-10.4:-11.2:-11.2 %s
+mplayer -really-quiet -af equalizer=-4:6:6:4:1:-2:-6:-7:-9:-10,extrastereo=4 %s
+mplayer -really-quiet -af equalizer=-3:3.2:3.2:1.8:0.5:-1.5:-2.5:-3:-4:-4 %s
+vlc %s
+mplayer -really-quiet -af volnorm=1:0.9 %s
+mplayer -really-quiet -af volnorm=1:0.5 %s
+mplayer -really-quiet -af volnorm=1:0.9,gate,extrastereo %s
+mplayer -really-quiet -af volnorm=1:0.5,gate,extrastereo %s
+listen -q ~/.sm/%s > /dev/null
+exaile ~/.sm/%s
+""".strip().split("\n")
+players.sort()
+player    = players[4]
+prev      = "mplayer -ss 30 -endpos 45 %s"
+itens     = []
+achado    = []
+playlist  = []
+last = []
+fhist="hist.shelve"
+local = ""
+ascii = False
+fileman = "nautilus %s"
+nomo = "SercxiMuzikoj 0.5"# (20070910)" 20080819+pidgin 20081126+hist
+nomo = "SercxiMuzikoj 0.5.5 (20090514)"# 2009.05.14, correcoes do hist
+nomo = "Ser\xc4\x89iMuzikoj 0.5.5 (20090515)"# 2009.05.14, correcoes do hist
+nomo = "Ser\xc4\x89iMuzikoj 0.5.6 (20090518)"# 2009.05.18, video
+nomo = "Ser\xc4\x89iMuzikoj 0.5.7 (20090525)"# 2009.05.25, play "..."
+nomo = "Ser\xc4\x89iMuzikoj 0.5.8 (20090530)"# 2009.05.30, asc, parse url
+pro = "SM? "
+catx = "! Cache vazio."
+mata = 0.4
+def smprint(arg):
+    print "\033[1m > %s\033[0m"%arg
+if "-p" in sys.argv:
+    pidgin = True # online = 2 ausente = 5
+    import dbus
+    bus = dbus.SessionBus()
+    obj = bus.get_object("im.pidgin.purple.PurpleService",\
+        "/im/pidgin/purple/PurpleObject")
+    purple = dbus.Interface(obj, "im.pidgin.purple.PurpleInterface")
+else:
+    pidgin = False
+def abre(aa):
+    rr = file('/tmp/sm.asc','w') #rr.write("\xe2\x99\xac Ouvindo '%s'"+\
+    rr.write("\xe2\x99\xac '%s' em '%s' por '%s' [SM1]\n"%(aa.titulo, aa.album,aa.autor))
+    rr.close()
+    if not(aa in last):
+        last.append(aa)
+        s = shelve.open(fhist)
+        try:
+            a = s["_at"]
+        except:
+            s["_at"] = -1;
+        s["_at"] = s["_at"] + 1
+        s[str(s["_at"])] = aa
+        s.close()
+    if pidgin:
+        #~ status = purple.PurpleSavedstatusNew("SM", 5)
+        t = " \xe2\x99\xac %s (%s)"%(aa.titulo,aa.autor)
+        #~ purple.PurpleSavedstatusSetMessage(status, t)
+        #~ purple.PurpleSavedstatusActivate(status)
+        c = purple.PurpleSavedstatusGetType(purple.PurpleSavedstatusGetCurrent())
+        # Create new transient status and activate it
+        status = purple.PurpleSavedstatusNew("", c)
+        purple.PurpleSavedstatusSetMessage(status, t)
+        purple.PurpleSavedstatusActivate(status)
+
+def fecha(aa):
+    rr = file('/tmp/sm.asc','w')
+    rr.write("(8) --nada--")
+    rr.close()
+    if pidgin:
+        #~ status = purple.PurpleSavedstatusNew("SM", 5)
+        t = "Volte mais tarde."
+        #~ purple.PurpleSavedstatusSetMessage(status, t)
+        #~ purple.PurpleSavedstatusActivate(status)
+        c = purple.PurpleSavedstatusGetType(purple.PurpleSavedstatusGetCurrent())
+        # Create new transient status and activate it
+        status = purple.PurpleSavedstatusNew("", c)
+        purple.PurpleSavedstatusSetMessage(status, t)
+        purple.PurpleSavedstatusActivate(status)
+
+def playy():
+    for i in achado:
+        try:
+            time.sleep(mata)
+            print " \xe2\x99\xac %s (%s)"%\
+                     (i.titulo,i.autor)
+            abre(i)
+        except:
+            print " [] Parou"
+            break
+        os.system(player%url(i.url))
+    fecha("")
+
+def hist(ls):
+    global achado
+    try:
+        i = int(ls)
+        r = False
+    except:
+        i = 20
+        r = True
+    s = shelve.open(fhist)
+    a = s["_at"]
+    print "Historico: %i itens"%(a+1)
+    if a <= i:
+        i = a
+        l = 0
+    if a > i:
+        l = a - i
+    ach = []
+    d = 0
+    if r:
+        for j in range(0, s["_at"]+1):
+            try:
+                m = s[str(j)]
+                if m.eh(ls.lower()):
+                    d += 1
+                    ach.append(m)
+                    print "\033[34m[% 3i]\033[0m"%d + str(m)
+            except:
+                pass
+    else:
+        for j in range(l+1, l+i+1):
+            if 1:
+                d += 1
+                m = s[str(j)]
+                ach.append(m)
+                print "\033[34m[% 3i]\033[0m"%d + str(m)
+            else:
+                pass
+    s.close()
+    if len(ach) != 0:
+        achado = ach
+        print "-- %i resultados de %i itens."%(len(achado), a+1)
+
+def asc(dat):
+    try:
+        dat = normalize('NFKD', dat.decode('UTF8')).encode('ASCII','ignore')
+    except:
+        dat = normalize('NFKD', dat.decode('latin1')).encode('ASCII','ignore')
+    return dat
+
+class musica:
+    """
+    Define um objeto do tipo musica.
+    """
+    def __init__(self, url):
+        tudo = url.replace("/ogg","").split("/")
+        autor  = "-"
+        album  = "-"
+        titulo = "-"
+        faixa  = -1
+        if len(tudo) >= 3 :
+            if tudo[-1][0:02].isdigit():
+                faixa  = int(tudo[-1][0:02])
+                titulo = tudo[-1][2:]
+                while len(titulo) > 1 and titulo[0] in tsep:
+                    titulo = titulo[1:]
+            else:
+                titulo = tudo[-1].strip()
+            titulo = titulo[:-4]
+            if len(tudo[-2].split("-")) is 2 and len(tudo[-2]) > 5:
+                autor   = tudo[-2].split("-")[0]
+                album   = tudo[-2].split("-")[1]
+                while len(autor) > 1 and autor[-1] in tsep:
+                    autor = autor[:-1]
+                while len(album) > 1 and album[0] in tsep:
+                    album = album[1:]
+                if autor.isdigit():
+                    album += " (%s)"%autor
+                    autor = tudo[-3]
+            else:
+                autor   = tudo[-3]
+                album   = tudo[-2]
+        self.autor  = autor.strip()
+        self.album  = album.strip()
+        self.titulo = titulo.strip()
+        if ascii:
+            self.autor = asc(self.autor)
+            self.album = asc(self.album)
+            self.titulo = asc(self.titulo)
+        self.faixa  = faixa
+        self.url    = url.strip()
+    def eh(self, a):
+        a = a.lower()
+        if busca[0] is "1" and a in self.autor.lower():
+            return True
+        if busca[1] is "1" and a in self.album.lower():
+            return True
+        if busca[2] is "1" and a in self.titulo.lower():
+            return True
+    def __str__(self):
+        autor = self.autor
+        album = self.album
+        titulo = self.titulo
+        faixa = self.faixa
+        if autor is "-":
+            autor = "(desconhecido)"
+        if album is "-":
+            album = "(desconhecido)"
+        if faixa is -1:
+            faixa = ""
+        else:
+            faixa = "[faixa %i]"%self.faixa
+        return """\033[1m %s\033[22m\033[32m
+        Album  : %s %s
+        Autor  : %s\033[0m"""%(titulo, album, faixa, autor)
+
+class video:
+    """
+    Define um objeto do tipo video.
+    """
+    def __init__(self, url):
+        tudo = url.replace("/ogg","").split("/")
+        autor  = "-"
+        album  = "-"
+        titulo = "-"
+        faixa  = -1
+        if len(tudo) >= 3 :
+            if tudo[-1][0:02].isdigit():
+                faixa  = int(tudo[-1][0:02])
+                titulo = tudo[-1][2:]
+                while len(titulo) > 1 and titulo[0] in tsep:
+                    titulo = titulo[1:]
+            else:
+                titulo = tudo[-1].strip()
+            titulo = titulo[:-4]
+            if len(tudo[-2].split("-")) is 2 and len(tudo[-2]) > 5:
+                autor   = tudo[-2].split("-")[0]
+                album   = tudo[-2].split("-")[1]
+                while len(autor) > 1 and autor[-1] in tsep:
+                    autor = autor[:-1]
+                while len(album) > 1 and album[0] in tsep:
+                    album = album[1:]
+            else:
+                autor   = tudo[-3]
+                album   = tudo[-2]
+        self.autor  = autor.strip()
+        self.album  = album.strip()
+        self.titulo = titulo.strip()
+        if ascii:
+            self.autor = asc(self.autor)
+            self.album = asc(self.album)
+            self.titulo = asc(self.titulo)
+        self.faixa  = faixa
+        self.url    = url.strip()
+    def eh(self, a):
+        a = a.lower()
+        if busca[0] is "1" and a in self.autor.lower():
+            return True
+        if busca[1] is "1" and a in self.album.lower():
+            return True
+        if busca[2] is "1" and a in self.titulo.lower():
+            return True
+    def __str__(self):
+        autor = self.autor
+        album = self.album
+        titulo = self.titulo
+        faixa = self.faixa
+        if autor is "-":
+            autor = "(desconhecido)"
+        if album is "-":
+            album = "(desconhecido)"
+        autor = "$video$"
+        return """\033[1m %s\033[22m\033[32m
+        Pasta  : %s\033[0m"""%(titulo, album)
+
+def url(i):
+    global local
+    return local+re.escape(i)
+
+def find(txt2):
+    global achado, maxres, itens
+    tt = time.time()
+    a = 1;
+    txt = txt2
+    if txt[0] == '+':
+        bleh = list(achado)
+        txt = txt[1:]
+    else:
+        bleh = itens
+    achado = []
+    for i in bleh:
+        if i.eh(txt):
+            achado.append(i)
+            if a <= maxres:
+                print "\033[34m[% 3i]\033[0m"%a + str(i)
+            a = a + 1
+    if len(achado) == 0 and txt2[0] == '+':
+        achado = list(bleh)
+        print "-- 0 resultados de %i itens. <%ims>"%(len(achado), 1000*(time.time()-tt))
+    elif txt2[0] == '+':
+        print "-- %i resultados de %i itens. <%ims>"%(len(achado),len(bleh),1000*(time.time()-tt))
+    else:
+        print "-- %i resultados. <%ims>"%(len(achado), 1000*(time.time()-tt))
+
+def randomico():
+    global achado
+    achado = []
+    i = itens[random.randrange(0, len(itens))]
+    print "\033[34m[% 3i]\033[0m"%1 + str(i)
+    achado.append(i)
+    print "-- random"
+
+def fromcd(a):
+    global achado, itens
+    aa = achado[a-1]
+    inicio = aa.url 
+    inicio = inicio[:inicio.rfind("/")] 
+    achado = []
+    a = 0
+    for i in itens:
+        if inicio == i.url[:i.url.rfind("/")]:
+            achado.append(i)
+            a = a + 1
+            print "\033[34m[% 3i]\033[0m"%a + str(i)
+
+def fromauth(a):
+    global achado, itens
+    aa = achado[a-1]
+    inicio = aa.url 
+    inicio = inicio[:inicio[:inicio.rfind("/")].rfind("/")] 
+    achado = []
+    a = 0
+    for i in itens:
+        if inicio == i.url[:i.url[:i.url.rfind("/")].rfind("/")]:
+            achado.append(i)
+            a = a + 1
+            print "\033[34m[% 3i]\033[0m"%a + str(i)
+
+def ajuda():
+    for i in raiz.split(" "):
+        print "! Raiz: %s"%i
+    print "! Comandos ativos:"
+    print "! -                 - Modo randomico."
+    print "! - $str            - Encontra musicas."
+    print "! - +$str           - Encontra musicas entre os resultados."
+    print "! - /max $int       - Seta o numero de resultados mostrados (20)."
+    print "! - /mode $str[3]   - Modo {01} para autor album titulo (111)."
+    print "! - /cd $int        - Mostra as musicas do cd de um resultado."
+    print "! - /au $int        - Mostra as musicas do autor de um resultado."
+    print "! - /play $int*     - Executa um ou mais resultados."
+    print "! - /plav $int*     - Preview da selecao."
+    print "! - /open $int      - Abre a pasta contendo o arquivo."
+    print "! - /gui $int       - Altera o player."
+    print "! - /mp3 $int       - Converte pra MP3 e prepara para o player"
+    print "! - /2mp3           - 'Commit' ao player"
+
+def shell():
+    global player,itens,achado,playlist,local,maxres,busca
+    while True:
+        try:
+            a = raw_input(pro)
+        except:
+            smprint ("\nSaindo...")
+            sys.exit(1)
+        if len(a) > 0:
+            if a[0] in "/>.*~;":
+                if a[0] == ';':
+                    print "\x1b\x5b\x48\x1b\x5b\x32\x4a! %s"%nomo
+                    print catx
+                if a.startswith("/max ") and a.split(" ")[1].isdigit():
+                    maxres = int(a.split(" ")[1])
+                elif a.startswith("/max"):
+                    print "Resultados mostrados: %i (default: 20)"%maxres
+                if a.startswith("/mode ") and len(a.split(" ")[1]) == 3:
+                    busca = a.split(" ")[1]
+                elif a.startswith("/mode"):
+                    print "Modo: " + busca + " (default: 111)"
+                if a.startswith("/cd ") and a.split(" ")[1].isdigit():
+                    if int(a[4:]) <= len(achado):
+                        fromcd(int(a[4:]))
+                if a.startswith("/au ") and a.split(" ")[1].isdigit():
+                    if int(a[4:]) <= len(achado):
+                        fromauth(int(a[4:]))
+                if a.startswith("/hist"):
+                    if len(a) > 6:
+                        hist(a[6:])
+                    else:
+                        hist(20)
+                if a.startswith("/open") or a[0] in "~":
+                    if len(a.split(" ")) > 1:
+                        for i in a.split(" "):
+                            if i.isdigit():
+                                if(int(i) <= len(achado) and int(i) > 0):
+                                    it = achado[int(i)-1]
+                                    url2 = it.url[:it.url.rfind("/")]
+                                    os.system(fileman%url(url2))
+                if a.startswith("/prev"):
+                    if len(a.split(" ")) > 1:
+                        for i in a.split(" "):
+                            if i.isdigit():
+                                if(int(i) <= len(achado) and int(i) > 0):
+                                    it = achado[int(i)-1]
+                                    os.system(prev%url(it.url))
+                if a.startswith("/gui"):
+                    if len(a.split(" ")) == 2 and a.split(" ")[1].isdigit():
+                        if int(a.split(" ")[1]) < len(players):
+                            player = players[int(a.split(" ")[1])]
+                            print "player: %s"%player
+                    else:
+                        for i in range(0,len(players)):
+                            if players[i] == player:
+                                print "[*% 2i] %s"%(i,players[i])
+                            else:
+                                print "[% 3i] %s"%(i,players[i])
+                if a.startswith("/play") or a[0] in ">.*":
+                    if len(a.split(" ")) > 1:
+                        if a[0] == "*":
+                            b = a
+                            for j in range(0, 200):
+                                a += "%s "%b[1:]
+                        for i in a.split(" "):
+                            if i.isdigit():
+                                if(int(i) <= len(achado) and int(i) > 0):
+                                    aa = achado[int(i)-1]
+                                    urls = aa.url
+                                    try:
+                                        time.sleep(mata)
+                                        print " \xe2\x99\xac %s (%s)"%\
+                                            (aa.titulo,aa.autor)
+                                        abre(aa)
+                                    except:
+                                        print " [] Parou"
+                                        break
+                                    os.system(player%url(urls))
+                        fecha(aa)
+                    else:
+                        for i in achado:
+                            try:
+                                time.sleep(mata)
+                                print " \xe2\x99\xac %s (%s)"%\
+                                         (i.titulo,i.autor)
+                                abre(i)
+                            except:
+                                print " [] Parou"
+                                break
+                            os.system(player%url(i.url))
+                        fecha("")
+                if a.startswith("/mp3"):
+                    escape = re.escape
+                    if len(a.split(" ")) > 1:
+                        if a.split(" ")[1] == "*":
+                            a = ""
+                            for i in range(1,len(achado)+1):
+                                a += "%i "%i
+                        for i in a.split(" "):
+                            if i.isdigit():
+                                if(int(i) <= len(achado) and int(i) > 0):
+                                    aa = achado[int(i)-1]
+                                    urls = aa.url
+                                    cc = time.time()
+                                    try:
+                                        time.sleep(mata)
+                                        bb =  " \342\232\230 %s (%s)"%\
+                                            (aa.titulo,aa.autor)
+                                        sys.stdout.write(bb)
+                                        sys.stdout.flush()
+                                    except:
+                                        break
+                                    d = convd%escape(aa.url)
+                                    tt = aa.titulo
+                                    ta = aa.autor
+                                    #saida titulo album
+                                    ss = escape(destino+ta + " - "+tt + ".mp3")
+                                    e = convc%(ss,escape(tt),escape(ta))
+                                    #os.system(player%url(urls))
+                                    #print d, e
+                                    os.system("%s | %s"%(d,e))
+                                    print " <%is>"%(time.time() - cc)
+                if a.startswith("/2mp3"):
+                    os.system("mv player/*.mp3 player/mp3")
+                if a.startswith("/save"):
+                    b = file("/home/internet100/Desktop/sm.pls","wb")
+                    b.write("[playlist]\n")
+                    b.write("NumberOfEntries=%i\n"%len(itens))
+                    c = 0
+                    for i in itens:
+                        c += 1
+                        b.write("\nFile%i=%s"%(c, "/home/internet100/.sm/"+i.url))
+                        b.write("\nTitle%i=%s"%(c, i.titulo + "(%s)"%i.autor))
+                        b.write("\nLength%i=-1\n"%c)
+                    b.write("\n\nVersion = 2\n")
+                    b.close()
+                    
+            else:
+                if ascii:
+                    a = asc(a)
+                if a.endswith("..."):
+                    find(a[:-3])
+                    playy()
+                else:
+                    find(a)
+        else:
+            randomico()
+
+def main():
+    global local, ascii, psy, catx, nomo
+    pasta = "%s/.sm/"%os.getenv("HOME")
+    try:
+        if not ("-r" in sys.argv):
+            os.chdir(pasta)
+    except:
+        print """Aplicativo mal instalado. 
+        Crie a estrutura a seguir em sua home:
+            $HOME/.sm           -> pasta do sm
+            $HOME/.sm/muzikoj   -> pasta de musicas, crie links simbolicos
+                para todas as suas pastas de musicas.
+        e execute:
+            sm -f               -> para atualizar o cache
+        e tente novamente!
+        """
+    if not "-a" in sys.argv:
+        ascii = True
+    if "-f" in sys.argv:
+        smprint ("  Criando cache:")
+        lista = ""
+        for i in os.listdir("muzikoj"):
+            if i != "index.html":
+                smprint ("    Indexando: %s"%i)
+                load = os.popen("find muzikoj/%s/ -type f | sort"%re.escape(i))
+                lista += load.read()
+        cac = open(pasta+"muzikoj.idx", "wb")
+        comp = bz2.compress(lista)
+        cac.write(comp)
+        cac.close()
+        smprint ("  Cache concluido: ")
+        smprint ("    Cache: %.2fM -> %.2fK (bzip2)"%\
+            (len(lista)/1024.0**2,len(comp)/1024.0)   )
+        smprint ("    Itens: %s"%len(lista.split("\n")) )
+        comp = ""
+        lista = ""
+        dados = ""
+    if "-r" in sys.argv:
+        try:
+            s = sys.argv[sys.argv.index("-r")+1]
+            local = "http://" + s + "/"
+            aa = open("%s.idx"%s.split(":")[0], "wb")
+            aa.write(urllib.urlopen("http://"+s+"/muzikoj.idx").read())
+            aa.close()
+            dados = bz2.decompress(open("%s.idx"%s.split(":")[0]).read())
+            nomo += " @ %s"%s.split(":")[0]
+        except:
+            smprint ("Nao pude carregar a lista remota :(")
+            sys.exit()
+    else:
+        try:
+            dados = bz2.decompress(open(pasta+"muzikoj.idx", "rb").read())
+            dat = time.gmtime(os.stat(pasta+"muzikoj.idx")[-1])
+        except:
+            smprint ("Falha ao carregar cache! atualize com '-f'")
+    smprint (nomo)
+    if psy:
+        smprint ("Psyco")
+    if ascii:
+        smprint ("Ascii")
+    if pidgin:
+        smprint ("Pidgin")
+    for j in dados.split("\n"):
+        i = j.strip().lower()
+        if i[-4:] in ['.ogg','.oga','.mp3','.wav','.wma','flac','.mpc','.mp2','.m4a']:
+            itens.append(musica(j.strip()))
+        elif i[-4:] in ['.avi','.mpg','.m2v','.wmv','.m4v','.ogv','.mkv','.flv','rmvb','.mov']:
+            itens.append(video(j.strip()))
+        elif i[-3:] in ['.rm']:
+            itens.append(video(j.strip()))
+    try:
+        dat = " (%02i/%02i/%02i %02i:%02i)"%(dat[2],dat[1],\
+            dat[0]%2000,dat[3],dat[4])
+    except:
+        dat = ""
+    if len(itens) > 0:
+        catx = "Cache com %i musicas%s."%(len(itens), dat)
+    smprint (catx)
+    dados = ""
+    #~ if '::' in sys.argv:sys.exit(1)
+    shell()
+
+
+if __name__=="__main__":
+    main()

@@ -1,0 +1,119 @@
+#!/usr/bin/python2.5
+# coding: utf8 
+import os
+import sys
+# import tagpy
+import re
+import shelve
+import time
+
+qval = 1
+dec = "mplayer -really-quiet %s -ao pcm:file=/dev/stdout < /dev/null"
+enc = "oggenc -q %i %s - -o %s"
+acc = ['mp3','mp2', 'ogg', 'wma', 'flac', 'fla', 'mp4', 'm4a', 'wav', 'mpc', 'mpa', 'mpe']
+td  = []
+ogt = "oga v1.1 20081219"
+ogt = "oga v1.2 20100615"
+for i in sys.argv:
+	if i.startswith("q="):
+		qval = int(i[2:])
+	if i.startswith("-noogg"):
+		acc.remove("ogg")
+
+
+class tag:
+    def __init__(mi, a, b, c, d, e, f):
+        (mi.tit, mi.alb, mi.aut, mi.tra, mi.ano, mi.gen) = a, b, c, d, e, f
+    
+    def __str__(mi):
+        a = ""
+        if len(mi.tit.strip()) > 0: a += "-t %s "%re.escape(mi.tit.strip())
+        if len(mi.alb.strip()) > 0: a += "-l %s "%re.escape(mi.alb.strip())
+        if len(mi.aut.strip()) > 0: a += "-a %s "%re.escape(mi.aut.strip())
+        if len(mi.gen.strip()) > 0: a += "-G %s "%re.escape(mi.gen.strip())
+        if len(str(mi.ano).strip()) > 2: a += "-d %s "%re.escape(str(mi.ano))
+        if len(str(mi.tra).strip()) > 0 and str(mi.tra) != "0":
+            a += "-N %s "%re.escape(str(mi.tra).strip())
+        return a.strip().encode("raw_unicode_escape")
+    
+class proj:
+    def __init__(mi, url):
+        mi.url = url
+        mi.des = url[:url.rindex(".")]+'.oga'
+        mi.id = "%04X"%(abs(hash(mi.des)) & 0xFFFF)
+        mi.tag = gettag(url)
+        mi.qval = qval
+        td.append(mi)
+        mi.num = len(td)
+        mi.ok = False
+    
+    def execute(mi):
+        if mi.ok:
+            return
+        url = mi.url
+        id = mi.id
+        ur  = url[:url.rindex(os.sep)]+os.sep+id+url[url.rindex('.'):]
+        des = mi.des
+        try: a = file(ur); a.close()
+        except: 
+            try: os.rename(url, ur)
+            except: 
+                mi.ok = True
+                return
+        des = re.escape(mi.des)
+        os.system("%s | %s"%(dec%re.escape(ur), enc%(mi.qval,mi.tag,des)))
+        print "Preparando para excluir..."
+        time.sleep(2)
+        try:
+            if os.stat(mi.des)[6] > 512*1024: os.remove(ur)
+            elif os.stat(ur)[6]<3072*1024 and os.stat(mi.des)>70000: os.remove(ur)
+        except:
+            pass
+        print "Removido."
+        mi.ok = True
+
+def gettag(f):
+    try:
+        a = tagpy.FileRef(f)
+        t = a.tag()
+        tt = tag(t.title, t.album, t.artist, t.track, t.year, t.genre)
+        del t
+        del a
+    except:
+        tt = tag("","","",0,0,"")
+    return tt
+
+def gogo():
+    global td
+    a = shelve.open("_cproj")
+    try:
+        td = a["td"]
+    except:
+        for i in os.walk("."):
+            j = 0
+            for d in i[2]:
+                if "." in d:
+                    if d[d.rindex(".")+1:].lower() in acc:
+                        j += 1
+                        proj("%s%s%s"%(i[0], os.sep, d))
+            if j > 0:
+                print "Pasta: [% 4i itens] %s"%(j, i[0])
+        a["td"] = td
+        a.close()
+        print "Projeto criado, chame este programa novamente para executar."
+        print "Total: %i itens a serem convertidos"%len(td)
+        sys.exit(0)
+    print "Total: %i itens a serem convertidos"%len(td)
+gogo()
+
+print ogt
+ct = 0
+for i in td:
+    ct += 1
+    sys.stdout.write("\033]0;OGA [%i/%i] %.2f%%\007"%(ct,len(td),100.0*ct/len(td)))
+    print "\x1b\x5b\x48\x1b\x5b\x32\x4aExecutando projeto: (%i de %i)\n"%(ct, len(td))
+    print "%s - %s\n"%(i.tag.aut, i.tag.tit)
+    i.execute()
+    a = shelve.open("_cproj")
+    a["td"] = td
+    a.close()

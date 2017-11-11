@@ -1,0 +1,134 @@
+#!/usr/bin/python
+from sys import argv
+from urllib import *
+
+#a = urllib("http://www.google.com")
+#a.read()
+
+
+msgno = "tenham ingressado no sistema, nesse caso, por favor, tente novamente mais tarde. Adicionalmente"
+linha = "<tr><td rowspan="
+lixo = '<FONT COLOR="000000">'
+t = {"AR":"AVISO DE RECEBIMENTO",
+"CC":"COLIS POSTAUX",
+"CE":"CHEQUE CORREIOS",
+"CR":"CARTA REGISTRADA SEM VALOR DECLARADO",
+"EB":"SEDEX INTERNACIONAL - EMS",
+"EC":"ENCOMENDA PAC",
+"TR":"ENCOMENDA PAC",
+"EE":"SEDEX INTERNACIONAL - EMS",
+"EH":"ENCOMENDA NORMAL COM AR DIGITAL",
+"EN":"ENCOMENDA NORMAL NACIONAL",
+"ER":"REGISTRADO",
+"ES":"e-SEDEX",
+"FE":"ENCOMENDA FNDE",
+"FF":"REGISTRADO DETRAN",
+"FH":"REGISTRADO FAC COM AR DIGITAL",
+"FR":"REGISTRADO FAC",
+"IC":"COLIS POSTAUX - RECEBIDOS DO EXTERIOR",
+"IF":"CPF",
+"IN":"OBJ DE CORRESP E EMS REC EXTERIOR",
+"IR":"IMPRESSO REGISTRADO",
+"LE":"LOGISTICA REVERSA ECONOMICA",
+"LS":"LOGISTICA REVERSA SEDEX",
+"LV":"LOGISTICA REVERSA EXPRESSA",
+"MA":"SERVICOS ADICIONAIS",
+"MB":"TELEGRAMA DE BALCAO",
+"MC":"MALOTE CORPORATIVO",
+"MF":"TELEGRAMA FONADO",
+"MI":"TELEGRAMA INTERFACE",
+"MK":"TELEGRAMA ESCRITORIO",
+"MM":"TELEGRAMA GRANDES CLIENTES",
+"MP":"TELEGRAMA PRE-PAGO",
+"MS":"ENCOMENDA SAUDE",
+"MT":"TELEGRAMA VIA TELEMAIL",
+"MW":"TELEGRAMA CORPORATIVO",
+"MY":"TELEGRAMA INTERNACIONAL ENTRANTE",
+"MZ":"TELEGRAMA VIA CORREIOS ON LINE",
+"PA":"PASSAPORTE",
+"PB":"ENCOMENDA PAC",
+"PR":"REEMBOLSO POSTAL - CLIENTE AVULSO",
+"RA":"REGISTRADO PRIORITARIO",
+"RB":"CARTA REGISTRADA",
+"RO":"CARTA REGISTRADA",
+"RC":"CARTA REGISTRADA COM VALOR DECLARADO",
+"RE":"REGISTRADO ECONOMICO",
+"RF":"OBJETO DA RECEITA FEDERAL",
+"RH":"REGISTRADO COM AR DIGITAL",
+"RI":"REGISTRADO PRIORITARIO",
+"RL":"REGISTRADO LOGICO",
+"RP":"REEMBOLSO POSTAL - CLIENTE INSCRITO",
+"RR":"CARTA REGISTRADA SEM VALOR DECLARADO",
+"RZ":"REGISTRADO URGENTE",
+"SA":"SEDEX ANOREG",
+"SC":"SEDEX A COBRAR",
+"SD":"SEDEX CRV-RS",
+"SE":"ENCOMENDA SEDEX",
+"SK":"ENCOMENDA SEDEX",
+"SH":"SEDEX COM AR DIGITAL",
+"SI":"SEDEX VIP",
+"SJ":"SEDEX HOJE",
+"SL":"SEDEX LOGICO",
+"SM":"SEDEX MESMO DIA",
+"SN":"SEDEX COM VALOR DECLARADO",
+"SP":"SEDEX PRe-FRANQUEADO",
+"SQ":"SEDEX",
+"SO":"SEDEX VISTA",
+"SR":"SEDEX",
+"SS":"SEDEX FISICO",
+"ST":"SEDEX NIT-RS",
+"SW":"e-SEDEX",
+"SX":"SEDEX 10",
+"TE":"TESTE (OBJETO PARA TREINAMENTO)",
+"XM":"SEDEX MUNDI",
+"XR":"ENCOMENDA SUR POSTAL EXPRESSO",
+"XX":"ENCOMENDA SUR POSTAL 24 HORAS",}
+
+
+def acha(i,ma=5):
+	if ma == 5:
+		print "-"*80
+	if len(i) is 13:
+		if i[0:2] in t.keys():
+			aaa = t[i[0:2]]
+		else:
+			aaa = "*" + i[0:2] + "*"
+		if ma == 5:
+			print "\033[1m+ Objeto: %s\033[22m\033[34m {%s}\033[0m"%(i,aaa)
+		linhas = urlopen("http://websro.correios.com.br/sro_bin/txect01$.Que"+\
+			"ryList?P_LINGUA=001&P_TIPO=001&P_COD_UNI=%s"%i).read().split("\n")
+		if msgno in str(linhas):
+			print "-> Objeto nao encontrado."
+		else:
+			l = 0
+			linhas.reverse()
+			for j in linhas:
+				if j.startswith(linha):
+					l += 1
+					d = j.replace(linha,'').replace(lixo,"").\
+						replace("</font>","")[2:-10].\
+						replace('<FONT COLOR="007FFF">','').\
+						replace('<FONT COLOR="5F9F9F">','').split("</td><td>")
+					d[1] = d[1].replace("  ", "")
+					#~ print ("  \033[1m+ Data:\033[0;32m %s\033[31m (%s)\033[0m\n   \033[1m   Local:  \033[0;34m%s\033[0m"%(d[0],d[2],d[1])).decode("latin1")
+					print (" \033[0;32m %s\033[31m %12s \033[0m\033[1m\033[0;34m%s\033[0m"%(d[0],d[2],d[1])).decode("latin1")
+			if l == 0:
+				if ma > 0:
+					acha(i,ma-1)
+				else:
+					print "-> Falha ao obter dados."
+				return
+
+
+
+
+
+if len(argv) is 1:
+	print " -> Faltam argumentos"
+else:
+	for i in range(1, len(argv)):
+		try: acha(argv[i].upper())
+		except IOError:
+			print "Erro interno."
+	print "-"*80
+
