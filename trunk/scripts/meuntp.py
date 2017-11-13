@@ -9,5 +9,5 @@ def gambiarra_ntp():
 	except:
 		time.sleep(60)
 		gambiarra_ntp()
-time.sleep(60)
+
 gambiarra_ntp()
